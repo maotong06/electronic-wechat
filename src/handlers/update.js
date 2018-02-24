@@ -22,7 +22,11 @@ class UpdateHandler {
     UpdateHandler.CHECKED = true;
     const promise = new Promise((res, rej) => {
       if (Common.ELECTRON === app.getName()) {
-        rej(Common.UPDATE_ERROR_ELECTRON);
+        try {
+          rej(Common.UPDATE_ERROR_ELECTRON);
+        } catch (error) {
+          console.log(error);
+        }
       }
       const req = https.get({
         host: Common.GITHUB_API_HOST,

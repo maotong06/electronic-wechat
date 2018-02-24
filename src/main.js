@@ -12,6 +12,53 @@ const WeChatWindow = require('./windows/controllers/wechat');
 const SettingsWindow = require('./windows/controllers/settings')
 const AppTray = require('./windows/controllers/app_tray');
 
+function initDebugger(webContents) {
+  try {
+    if (!webContents.debugger.isAttached()) {
+      webContents.debugger.attach('1.0')
+    }
+  } catch (err) {
+    console.log('Debugger attach failed : ', err)
+  }
+}
+
+// 根据requestId， 轮训获取result
+function getResponseBody(webContents, id) {
+  webContents.debugger.sendCommand('Network.getResponseBody', {
+    "requestId": id
+  }, (error, result) => {
+    if (!error || JSON.stringify(error) === "{}") {
+      console.log(`getResponseBody result: ${JSON.stringify(result)}`)
+    } else {
+      setTimeout(() => {
+        getResponseBody(webContents, id)
+      }, 1000);
+    }
+  })
+}
+
+// 监听message 获取requestId
+function listenMessage(wechatWindow, webContents) {
+  // let firstShotReloaded = false
+  webContents.debugger.sendCommand('Network.enable')
+  webContents.debugger.on('message', (event, method, params) => {
+    // if (!firstShotReloaded && method === 'Network.responseReceived') {
+    //   // XXX did not find any other way for first page load
+    //   console.log('firstShotReloaded');
+    //   firstShotReloaded = true
+    //   wechatWindow.reload()
+    // }
+    console.log(`method: ${method}`);
+    if (method === 'Network.requestWillBeSent') {
+      // 过滤出属于微信消息url
+      if (params.request.url.indexOf('webwxsync') > 0) {
+        getResponseBody(webContents, String(params.requestId))
+      }
+    }
+  })
+}
+
+
 class ElectronicWeChat {
   constructor() {
     this.wechatWindow = null;
@@ -49,13 +96,16 @@ class ElectronicWeChat {
       this.createSplashWindow();
       this.createWeChatWindow();
       this.createTray();
-
+      
       if (!AppConfig.readSettings('language')) {
         AppConfig.saveSettings('language', 'en');
         AppConfig.saveSettings('prevent-recall', 'on');
         AppConfig.saveSettings('icon', 'black');
         AppConfig.saveSettings('multi-instance','on');
       }
+      let w = this.wechatWindow.wechatWindow
+      initDebugger(w.webContents)
+      listenMessage(w, w.webContents)
     });
 
     app.on('activate', () => {
